@@ -50,7 +50,7 @@ struct PlayMode : Mode {
 	float max_timer;
 	float timer; // timer in seconds
 
-	int currentHouseIndex = 0;
+	size_t currentHouseIndex = 0;
 	float distThreshold = 4.0f;
 
 	Scene::Drawable *marker = nullptr;
