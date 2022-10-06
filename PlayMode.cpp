@@ -104,7 +104,7 @@ float PlayMode::rand_float(float lo, float hi) {
 }
 
 void PlayMode::pick_house() {
-	int lastIndex = currentHouseIndex;
+	size_t lastIndex = currentHouseIndex;
 	while (currentHouseIndex == lastIndex) {
 		currentHouseIndex = rand_int(0, houses.size());
 	}
