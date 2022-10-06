@@ -59,7 +59,7 @@ struct PlayMode : Mode {
 	bool gameOver = false;
 
 	// Generates random integer [min, max)
-	int rand_int(int min, int max);
+	size_t rand_int(size_t min, size_t max);
 
 	// Generates random float [min, max]
 	float rand_float(float lo, float hi);

@@ -92,13 +92,7 @@ PlayMode::PlayMode() : scene(*game_scene) {
 PlayMode::~PlayMode() {
 }
 
-int PlayMode::rand_int(int min, int max) {
-	static bool firstCall = true;
-	if (firstCall) {  
-		srand(time(NULL));
-		firstCall = false;
-	}
-
+size_t PlayMode::rand_int(size_t min, size_t max) {
 	return min + rand() % (max - min);
 }
 
@@ -115,7 +109,7 @@ void PlayMode::pick_house() {
 		currentHouseIndex = rand_int(0, houses.size());
 	}
 
-	max_timer = rand_float(8.0f, 30.0f);
+	max_timer = rand_float(8.0f, 25.0f);
 	timer = max_timer;
 
 	marker->transform->position = houses[currentHouseIndex]->drawable->transform->position;
