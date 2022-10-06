@@ -23,7 +23,7 @@ struct PlayMode : Mode {
 	struct Button {
 		uint8_t downs = 0;
 		uint8_t pressed = 0;
-	} left, right, down, up;
+	} left, right, down, up, interact;
 
 	//local copy of the game scene (so code can change it during gameplay):
 	Scene scene;
@@ -36,4 +36,34 @@ struct PlayMode : Mode {
 		//camera is at player's head and will be pitched by mouse up/down motion:
 		Scene::Camera *camera = nullptr;
 	} player;
+
+
+	// Game vars
+	struct House {
+		glm::vec3 dropoffPos;
+		Scene::Drawable *drawable = nullptr;
+	};
+
+	std::vector<House*> houses;
+
+	uint32_t score = 0;
+	float max_timer;
+	float timer; // timer in seconds
+
+	int currentHouseIndex = 0;
+	float distThreshold = 4.0f;
+
+	Scene::Drawable *marker = nullptr;
+	glm::vec3 marker_base_position;
+
+	bool gameOver = false;
+
+	// Generates random integer [min, max)
+	int rand_int(int min, int max);
+
+	// Generates random float [min, max]
+	float rand_float(float lo, float hi);
+
+	// Picks the next house for the dropoff
+	void pick_house();
 };

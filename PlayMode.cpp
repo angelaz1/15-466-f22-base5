@@ -11,6 +11,10 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+// For formatting integers 
+// Ref: https://stackoverflow.com/questions/29200635/convert-float-to-string-with-precision-number-of-decimal-digits-specified
+#include <iomanip>
+#include <sstream>
 #include <random>
 
 GLuint game_meshes_for_lit_color_texture_program = 0;
@@ -45,6 +49,22 @@ Load< WalkMeshes > game_walkmeshes(LoadTagDefault, []() -> WalkMeshes const * {
 });
 
 PlayMode::PlayMode() : scene(*game_scene) {
+	// Get pointers to key drawables for convenience:
+	houses = std::vector<House*>();
+	for (auto &drawable : scene.drawables) {
+		if (drawable.transform->name.find("House") != std::string::npos) {
+			House *house = new House();
+			house->drawable = &drawable;
+			house->dropoffPos = walkmesh->to_world_point(walkmesh->nearest_walk_point(drawable.transform->position));
+
+			houses.push_back(house);
+		} else if (drawable.transform->name == "Marker") {
+			marker = &drawable;
+		}
+	}
+
+	if (marker == nullptr) throw std::runtime_error("Marker not found."); 
+
 	//create a player transform:
 	scene.transforms.emplace_back();
 	player.transform = &scene.transforms.back();
@@ -66,13 +86,44 @@ PlayMode::PlayMode() : scene(*game_scene) {
 	//start player walking at nearest walk point:
 	player.at = walkmesh->nearest_walk_point(player.transform->position);
 
+	pick_house();
 }
 
 PlayMode::~PlayMode() {
 }
 
-bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
+int PlayMode::rand_int(int min, int max) {
+	static bool firstCall = true;
+	if (firstCall) {  
+		srand(time(NULL));
+		firstCall = false;
+	}
 
+	return min + rand() % (max - min);
+}
+
+float PlayMode::rand_float(float lo, float hi) {
+	// Referenced StackOverflow https://stackoverflow.com/questions/5289613/generate-random-float-between-two-floats
+	float rand_val = ((float) rand()) / (float) RAND_MAX; // Generates random between 0 and 1
+	float diff = hi - lo;
+	return lo + diff * rand_val;
+}
+
+void PlayMode::pick_house() {
+	int lastIndex = currentHouseIndex;
+	while (currentHouseIndex == lastIndex) {
+		currentHouseIndex = rand_int(0, houses.size());
+	}
+
+	max_timer = rand_float(8.0f, 30.0f);
+	timer = max_timer;
+
+	marker->transform->position = houses[currentHouseIndex]->drawable->transform->position;
+	marker->transform->position.z = 10.0f;
+	marker_base_position = marker->transform->position;
+}
+
+bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
 	if (evt.type == SDL_KEYDOWN) {
 		if (evt.key.keysym.sym == SDLK_ESCAPE) {
 			SDL_SetRelativeMouseMode(SDL_FALSE);
@@ -93,6 +144,10 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			down.downs += 1;
 			down.pressed = true;
 			return true;
+		} else if (evt.key.keysym.sym == SDLK_e) {
+			interact.downs += 1;
+			interact.pressed = true;
+			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
 		if (evt.key.keysym.sym == SDLK_a) {
@@ -106,6 +161,9 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_s) {
 			down.pressed = false;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_e) {
+			interact.pressed = false;
 			return true;
 		}
 	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
@@ -137,10 +195,12 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PlayMode::update(float elapsed) {
+	if (gameOver) return;
+
 	//player walking:
 	{
 		//combine inputs into a move:
-		constexpr float PlayerSpeed = 3.0f;
+		constexpr float PlayerSpeed = 10.0f;
 		glm::vec2 move = glm::vec2(0.0f);
 		if (left.pressed && !right.pressed) move.x =-1.0f;
 		if (!left.pressed && right.pressed) move.x = 1.0f;
@@ -212,14 +272,27 @@ void PlayMode::update(float elapsed) {
 			player.transform->rotation = glm::normalize(adjust * player.transform->rotation);
 		}
 
-		/*
-		glm::mat4x3 frame = camera->transform->make_local_to_parent();
-		glm::vec3 right = frame[0];
-		//glm::vec3 up = frame[1];
-		glm::vec3 forward = -frame[2];
+		if (interact.pressed) {
+			if (glm::distance(player.transform->position, houses[currentHouseIndex]->dropoffPos) < distThreshold) {
+				score++;
+				pick_house();
+			}
+		}
+	}
 
-		camera->transform->position += move.x * right + move.y * forward;
-		*/
+	{ // Marker animation
+		static float marker_anim_time = 0.0f;
+		marker_anim_time += elapsed / 0.75f;
+		marker_anim_time -= std::floor(marker_anim_time);
+
+		marker->transform->position = marker_base_position 
+			+ 0.5f * std::sin(marker_anim_time * 2.0f * float(M_PI)) * glm::vec3(0.0f, 0.0f, 1.0f);
+	}
+
+	timer -= elapsed;
+	if (timer <= 0) {
+		timer = 0;
+		gameOver = true;
 	}
 
 	//reset button press counters:
@@ -227,6 +300,7 @@ void PlayMode::update(float elapsed) {
 	right.downs = 0;
 	up.downs = 0;
 	down.downs = 0;
+	interact.downs = 0;
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -234,11 +308,13 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	player.camera->aspect = float(drawable_size.x) / float(drawable_size.y);
 
 	//set up light type and position for lit_color_texture_program:
-	// TODO: consider using the Light(s) in the scene to do this
 	glUseProgram(lit_color_texture_program->program);
 	glUniform1i(lit_color_texture_program->LIGHT_TYPE_int, 1);
 	glUniform3fv(lit_color_texture_program->LIGHT_DIRECTION_vec3, 1, glm::value_ptr(glm::vec3(0.0f, 0.0f,-1.0f)));
-	glUniform3fv(lit_color_texture_program->LIGHT_ENERGY_vec3, 1, glm::value_ptr(glm::vec3(1.0f, 1.0f, 0.95f)));
+	
+	float timer_ratio = timer / max_timer;
+	glUniform3fv(lit_color_texture_program->LIGHT_ENERGY_vec3, 1, glm::value_ptr(glm::vec3(1.0f, timer_ratio * 1.0f, timer_ratio * 0.95f)));
+
 	glUseProgram(0);
 
 	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
@@ -272,14 +348,45 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			0.0f, 0.0f, 0.0f, 1.0f
 		));
 
+		std::string display_text = "Mouse motion looks; WASD moves; escape ungrabs mouse; E interacts with building";
+
 		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
+		float ofs = 2.0f / drawable_size.y;
+		lines.draw_text(display_text,
 			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
-		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
+		lines.draw_text(display_text,
 			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
+			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+
+		if (timer == 0) {
+			display_text = "BOOM!! Game Over!!";
+		}
+		else {
+			std::stringstream stream;
+			stream << std::fixed << std::setprecision(2) << timer;
+			display_text = "TIME TILL BOMB BLOWS: " + stream.str();
+		}
+
+		lines.draw_text(display_text,
+			glm::vec3(-aspect + 0.1f * H, 1.0 - 1.5f * H, 0.0),
+			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
+		lines.draw_text(display_text,
+			glm::vec3(-aspect + 0.1f * H + ofs, 1.0 - 1.5f * H + ofs, 0.0),
+			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+
+		display_text = "Score: " + std::to_string(score);
+
+		lines.draw_text(display_text,
+			glm::vec3(aspect - 3.5f * H, 1.0 - 1.5f * H, 0.0),
+			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
+		lines.draw_text(display_text,
+			glm::vec3(aspect - 3.5f * H + ofs, 1.0 - 1.5f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 	}

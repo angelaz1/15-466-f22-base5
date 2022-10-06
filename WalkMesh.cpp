@@ -20,7 +20,6 @@ WalkMesh::WalkMesh(std::vector< glm::vec3 > const &vertices_, std::vector< glm::
 		assert(ret.second);
 	};
 	for (auto const &tri : triangles) {
-		std::cout << tri.x << "::" << tri.y << "::" << tri.z << "\n";
 		do_next(tri.x, tri.y, tri.z);
 		do_next(tri.y, tri.z, tri.x);
 		do_next(tri.z, tri.x, tri.y);
